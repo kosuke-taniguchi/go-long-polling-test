@@ -19,10 +19,9 @@ func main() {
 		panic(err)
 	}
 
-	
 	router := echo.New()
 	router.GET("/get", wrapWithContext(manager.SubscriptionHandler))
-	router.POST("/post", wrapWithContext(manager.PublishHandler))
+	router.POST("/post", wrapWithContextPost(manager.PublishHandler))
 
 	go getMessages(manager)
 
@@ -36,6 +35,18 @@ func wrapWithContext(lpHandler func(http.ResponseWriter, *http.Request)) func(ec
 	}
 }
 
+func wrapWithContextPost(lpHandler func(http.ResponseWriter, *http.Request)) func(echo.Context) error {
+	return func(c echo.Context) error {
+		fmt.Println("insert messages")
+		lpHandler(c.Response().Writer, c.Request())
+		return nil
+	}
+}
+
+type requestBody struct {
+	text string `json:"text"`
+}
+
 func getMessages(lpManager *golongpoll.LongpollManager) {
 	u, err := url.Parse("http://127.0.0.1:8081/get")
 	if err != nil {
@@ -44,7 +55,7 @@ func getMessages(lpManager *golongpoll.LongpollManager) {
 
 	c, err := client.NewClient(client.ClientOptions{
 		SubscribeUrl:   *u,
-		Category:       "messages",
+		Category:       "to-messages",
 		LoggingEnabled: true,
 	})
 	if err != nil {
@@ -52,11 +63,16 @@ func getMessages(lpManager *golongpoll.LongpollManager) {
 	}
 
 	for event := range c.Start(time.Now()) {
-		msg := event.Data.(string)
-		normMsg := strings.ToLower(msg)
-		
-		lpManager.Publish("messages", normMsg)
+		req := event.Data.(map[string]interface{})
+
+		text := req["text"].(string)
+		normMsg := strings.ToLower(text)
+
+		fmt.Println("select messages")
+		fmt.Println(normMsg)
+
+		lpManager.Publish("from-messages", normMsg)
 	}
-	
+
 	fmt.Println("stopping")
 }
